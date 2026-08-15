@@ -29,7 +29,13 @@ class SiglipVisionConfig:
                 self.num_image_tokens = num_image_tokens
 
 class SiglipVisionEmbeddings(nn.Module):
+
 	def __init__(self, config: SiglipVisionConfig):
+		"""
+			This class is responsible for converting image to embeddings which can be passed to the vision transformer. 
+			Each single image will be converted to a list of tokens, each single token being a list of embeddings of 'config.hidden_size' size.
+			No. of tokens per image = num_patches = image_size//patch_size
+		"""
 		super().__init__()
 		self.config = config
 		self.embed_dim = config.hidden_size
@@ -57,7 +63,7 @@ class SiglipVisionEmbeddings(nn.Module):
 		b, c, height, width = pixel_values.shape #[Batch_Size, Channels, Height, Width]
 
 		patch_embeds: torch.Tensor = self.patch_embedding(pixel_values) # Convolve 'patch_size' patches(kernels) over the entire image with no overlap of the kernels
-			#converts [Batch_Size, Channels, Height, Width] -> [Batch_Size, embed_dim, Num_patches_H, Num_patches_W]
+			#converts shape [Batch_Size, Channels, Height, Width] -> [Batch_Size, embed_dim, Num_patches_H, Num_patches_W]
 			# where Num_patches_H = no. of rows of patches (i.e height wise) = self.image_size//self.patch_size
 			# similarly Num_patches_W = no. of coumns of patches = self.image_size//self.patch_size
 
@@ -73,6 +79,9 @@ class SiglipVisionEmbeddings(nn.Module):
 
 		return embeddings
 				
+
+class SiglipEncoder(nn.Module):
+	pass
 
 class SiglipVisionTransformer(nn.Module):
 	def __init__(self, config: SiglipVisionConfig):
