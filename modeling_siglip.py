@@ -40,7 +40,7 @@ class SiglipVisionEmbeddings(nn.Module):
 			in_channels=config.num_channels,
 			out_channels=self.embed_dim,
 			kernel_size=self.patch_size,
-			stride=self.patch_size,
+			stride=self.patch_size, # no overlap of the kernels as stried = patch_size
 			padding="valid", #Indicates no padding is added
 		)
 
@@ -54,7 +54,25 @@ class SiglipVisionEmbeddings(nn.Module):
 		)
 
 	def forward(self, pixel_values: torch.FloatTensor)->torch.Tensor:
-		pass
+		b, c, height, width = pixel_values.shape #[Batch_Size, Channels, Height, Width]
+
+		patch_embeds: torch.Tensor = self.patch_embedding(pixel_values) # Convolve 'patch_size' patches(kernels) over the entire image with no overlap of the kernels
+			#converts [Batch_Size, Channels, Height, Width] -> [Batch_Size, embed_dim, Num_patches_H, Num_patches_W]
+			# where Num_patches_H = no. of rows of patches (i.e height wise) = self.image_size//self.patch_size
+			# similarly Num_patches_W = no. of coumns of patches = self.image_size//self.patch_size
+
+		embeddings = patch_embeds.flatten(2) # It preserves dimensions 0 and 1, and flattens all dimensions from index 2 onward.
+			#converts [Batch_Size, embed_dim, Num_patches_H, Num_patches_W] -> [Batch_Size, embed_dim, Num_patches]
+			# where Num_patches = Num_patches_H * Num_patches_W
+
+		embeddings = embeddings.transpose(1,2) # transpose dimension 1 and 2
+			#converts [Batch_Size, embed_dim, Num_patches] ->  [Batch_Size, Num_patches, embed_dim]
+
+		embeddings = embeddings + self.positional_embeddings(self.position_ids)
+			#[Batch_Size, Num_patches, embed_dim] + [Num_patches, embed_dim] = [Batch_Size, Num_patches, embed_dim] (broadcasts across all batch images)
+
+		return embeddings
+				
 
 class SiglipVisionTransformer(nn.Module):
 	def __init__(self, config: SiglipVisionConfig):
