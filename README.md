@@ -1,0 +1,1 @@
+Implementing the PaliGemma model from Google's Gemma family, from scratch in pytorch, building both the SigLIP vision encoder and the Gemma-2B language model. PaliGemma combines these two components via a linear projection layer to produce a vision-language model, adding multimodal capabilities to the originally text-only Gemma architecture of early days.
