@@ -6,8 +6,8 @@ class SiglipVisionConfig:
         def __init__(
             self,
             hidden_size=768,
-            intermediate_size=3072,
-            num_hidden_lyers=12,
+            intermediate_size=3072, # size of intermediate layer in MLP
+            num_hidden_layers=12,
             num_channels=3,
             image_size=224,
             patch_size=16, #i.e, take 16*16 sized patches to perform convolution on, and produce one embedding for each 
@@ -20,7 +20,7 @@ class SiglipVisionConfig:
 
                 self.hidden_size=hidden_size,
                 self.intermediate_size=intermediate_size,
-                self.num_hidden_lyers=hidden_size,
+                self.num_hidden_layers=hidden_size,
                 self.num_channels=num_channels,
                 self.image_size=image_size,
                 self.patch_size=patch_size,
@@ -80,8 +80,62 @@ class SiglipVisionEmbeddings(nn.Module):
 		return embeddings
 				
 
-class SiglipEncoder(nn.Module):
+class SiglipAttention(nn.Module):
 	pass
+
+class SiglipMLP(nn.Module):
+	def __init__(self, config: SiglipVisionConfig):
+		super().__init__()
+		self.config = config
+		self.fc1 = nn.Linear(config.hidden_size, config.intermediate_size)
+		self.fc2 = nn.Linear(config.intermediate_size, config.hidden_size)
+
+	def forward(self, hidden_states: torch.Tensor) -> torch.Tensor:
+
+		hidden_states = self.fc1(hidden_states)
+			#[Batch_size, Num_patches, Embed_dim] -> [Batch_size, Num_patches, Intermediate_size]
+		hidden_states = nn.functional.gelu(hidden_states, approximate="tanh")
+			# [Batch_size, Num_patches, Intermediate_size]
+		hidden_states = self.fc2(hidden_states)
+			# [Batch_size, Num_patches, Intermediate_size] ->] [Batch_size, Num_patches, Embed_dim]
+		return hidden_states
+
+
+class SiglipEncoder(nn.Module):
+	def __init__(self, config: SiglipVisionConfig):
+		super().__init__()
+		self.config = config
+		self.embed_dim = config.hidden_size
+		self.self_attn = SiglipAttention(config)
+		self.layer_norm = nn.LayerNorm(self.embed_dim, eps=config.layer_norm_eps)
+		self.mlp = SiglipMLP(config)
+		self.layer_norm2 = nn.LayerNorm(self.embed_dim, eps=config.layer_norm_eps)
+
+	def forward(self, hidden_states: torch.Tensor) -> torch.Tensor:
+		"forward pass through the encoder"
+
+		residual = hidden_states
+			# residual: [Batch_size, Num_patches, Embed_dim]
+
+		hidden_states = self.layer_norm(hidden_states)
+			#[Batch_size, Num_patches, Embed_dim] -> [Batch_size, Num_patches, Embed_dim]
+
+		hidden_states, _ = self.self_attn(hidden_states)
+			#[Batch_size, Num_patches, Embed_dim] -> [Batch_size, Num_patches, Embed_dim]
+		
+		hidden_states = residual + hidden_states
+		residual = hidden_states
+
+		hidden_states = self.layer_norm2(hidden_states)
+			#[Batch_size, Num_patches, Embed_dim]
+		
+		hidden_states = self.mlp(hidden_states)
+			# [Batch_size, Num_patches, Embed_dim] => [Batch_size, Num_patches, Embed_dim]
+
+		hidden_states = residual + hidden_states
+
+		return hidden_states
+		
 
 class SiglipVisionTransformer(nn.Module):
 	def __init__(self, config: SiglipVisionConfig):
@@ -99,7 +153,9 @@ class SiglipVisionTransformer(nn.Module):
 
 		hidden_state = self.embeddings(pixel_values)
 
-		last_hidden_state = self.post_layernorm(hidden_state)
+		last_hidden_state = self.encoder(hidden_state)
+
+		last_hidden_state = self.post_layernorm(last_hidden_state)
 
 		return last_hidden_state
 
