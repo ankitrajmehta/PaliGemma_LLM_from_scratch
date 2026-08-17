@@ -3,30 +3,32 @@ import torch
 import torch.nn as nn
 
 class SiglipVisionConfig:
-        def __init__(
-            self,
-            hidden_size=768,
-            intermediate_size=3072, # size of intermediate layer in MLP
-            num_hidden_layers=12,
-            num_channels=3,
-            image_size=224,
-            patch_size=16, #i.e, take 16*16 sized patches to perform convolution on, and produce one embedding for each 
-            layer_norm_eps=1e-6,
-            attention_dropout=0.0,
-            num_image_tokens: int = None,
-            **kwargs
-            ):
-                super().__init__()
+		def __init__(
+			self,
+			hidden_size=768,
+			intermediate_size=3072, # size of intermediate layer in MLP
+			num_hidden_layers=12,
+			num_attention_heads = 12,
+			num_channels=3,
+			image_size=224,
+			patch_size=16, #i.e, take 16*16 sized patches to perform convolution on, and produce one embedding for each 
+			layer_norm_eps=1e-6,
+			attention_dropout=0.0,
+			num_image_tokens: int = None,
+			**kwargs
+			):
+				super().__init__()
 
-                self.hidden_size=hidden_size,
-                self.intermediate_size=intermediate_size,
-                self.num_hidden_layers=hidden_size,
-                self.num_channels=num_channels,
-                self.image_size=image_size,
-                self.patch_size=patch_size,
-                self.layer_norm_eps=layer_norm_eps,
-                self.attention_dropout=attention_dropout,
-                self.num_image_tokens = num_image_tokens
+				self.hidden_size=hidden_size
+				self.intermediate_size=intermediate_size
+				self.num_hidden_layers=num_hidden_layers
+				self.num_attention_heads = num_attention_heads
+				self.num_channels=num_channels
+				self.image_size=image_size
+				self.patch_size=patch_size
+				self.layer_norm_eps=layer_norm_eps
+				self.attention_dropout=attention_dropout
+				self.num_image_tokens = num_image_tokens
 
 class SiglipVisionEmbeddings(nn.Module):
 
@@ -81,7 +83,26 @@ class SiglipVisionEmbeddings(nn.Module):
 				
 
 class SiglipAttention(nn.Module):
-	pass
+	"Multi-headed attention"
+
+	def __init__(self, config: SiglipVisionConfig):
+		super().__init__()
+		self.config = config
+		self.embed_dim = config.hidden_size
+		self.num_heads = config.num_attention_heads
+		self.head_dim = self.embed_dim//self.num_heads
+		self.scale = self.head_dim**-0.5 # 1/sq.root(d)
+		#no dropout
+
+		self.k_proj = nn.Linear(self.embed_dim, self.embed_dim)
+		self.v_proj = nn.Linear(self.embed_dim, self.embed_dim)
+		self.q_proj = nn.Linear(self.embed_dim, self.embed_dim)
+		  
+		self.out_proj = nn.Linear(self.embed_dim, self.embed_dim)
+
+
+		def forward(self, hidden_states: torch.Tensor) -> Tuple[torch.Tensor, Optional[torch.Tensor]]:
+			pass
 
 class SiglipMLP(nn.Module):
 	def __init__(self, config: SiglipVisionConfig):
