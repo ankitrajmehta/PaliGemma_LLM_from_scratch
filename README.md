@@ -6,4 +6,4 @@ Coding the PaliGemma model's architecture from Google's Gemma family, from scrat
 
 ![View the PaliGemma architecture diagram](diagrams/siglip_arch.png)
 
-[![View High Resolution image](https://shields.io)](diagrams/siglip_arch.pdf)
+[![View in High Resolution](https://shields.io)](diagrams/siglip_arch.pdf)
