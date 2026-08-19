@@ -4,4 +4,4 @@ Coding the PaliGemma model's architecture from Google's Gemma family, from scrat
 
 ## SigLip Vision Transformer Architecture (So Far)
 
-![View the PaliGemma architecture diagram](assets/paligemma_architecture.png)
+![View the PaliGemma architecture diagram](diagrams/siglip_arch.png)
