@@ -57,7 +57,7 @@ class SiglipVisionEmbeddings(nn.Module):
 		self.positional_embeddings = nn.Embedding(self.num_positions, self.embed_dim) #learned positonal embeddings
 		self.register_buffer(
 			"position_ids",
-			torch.arange(self.num_positions).expand((-1,1)), #.expand((1,-1)) resizes its shape from [self.num_positions] to [1,self.num_positions]
+			torch.arange(self.num_positions).expand((1,-1)), #.expand((1,-1)) resizes its shape from [self.num_positions] to [1,self.num_positions]
 			persistent=False # no  need to store this in state_dict as it easily calculateable 
 		)
 
@@ -92,7 +92,7 @@ class SiglipAttention(nn.Module):
 		self.num_heads = config.num_attention_heads
 		self.head_dim = self.embed_dim//self.num_heads
 		self.scale = self.head_dim**-0.5 # 1/sq.root(d)
-		#no dropout
+		self.dropout = config.attention_dropout
 
 		self.k_proj = nn.Linear(self.embed_dim, self.embed_dim)
 		self.v_proj = nn.Linear(self.embed_dim, self.embed_dim)
@@ -101,8 +101,67 @@ class SiglipAttention(nn.Module):
 		self.out_proj = nn.Linear(self.embed_dim, self.embed_dim)
 
 
-		def forward(self, hidden_states: torch.Tensor) -> Tuple[torch.Tensor, Optional[torch.Tensor]]:
-			pass
+	def forward(self, hidden_states: torch.Tensor) -> Tuple[torch.Tensor, Optional[torch.Tensor]]:
+		"hidden_states: [Batch_size, Num_patches, Embed_dim]"
+		batch_size, seq_len, _ = hidden_states.size()
+
+		query_states = self.q_proj(hidden_states)
+		key_states = self.k_proj(hidden_states)
+		value_states = self.v_proj(hidden_states)
+			# all three states shape: [Batch_size, Num_patches, Embed_dim]
+
+		query_states = query_states.view(batch_size, seq_len, self.num_heads, self.head_dim)
+			# query_states: [Batch_size, Num_patches, Embed_dim] -> [Batch_size, Num_patches, Num_heads, Head_Dim]  (done to breakdown the q array (product of hidden_states * W^q) into Num_heads number of arrays, each of size Head_dim. Each Head_dim sized array goes to one attention head)
+		query_states = query_states.transpose(1,2)
+			# query_states: [Batch_size, Num_patches, Num_heads, Head_Dim]  -> [Batch_size, Num_heads, Num_patches, Head_Dim]  (done so its easier to pass the Head_dim sized arrays from each of all the patches to the respective attention head)
+		key_states = key_states.view(batch_size, seq_len, self.num_heads, self.head_dim).transpose(1,2)
+		value_states = value_states.view(batch_size, seq_len, self.num_heads, self.head_dim).transpose(1,2)
+			# same as query_states operations done above
+			# [Batch_size, Num_heads, Num_patches, Head_Dim]
+
+		attn_weights = (torch.matmul(query_states, key_states.transponse(2,3))* self.scale)
+			# calculate the attention using the formula Q * K^T / sqrt(d_k). 
+			# (Q:[Batch_size, Num_heads, Num_patches, Head_Dim] * K^T:[Batch_size, Num_heads, Head_Dim, Num_patches]) / sqrt(d_k) ->
+			# attn_weights: [Batch_size, Num_Heads, Num_patches, Num_patches]
+
+		if attn_weights.size() != (batch_size, self.num_heads, seq_len, seq_len):
+			raise ValueError(
+				f"Attention weights should be of size {(batch_size, self.num_heads, seq_len, seq_len)}, but is of size {attn_weights.size()}"
+			)
+
+		attn_weights = nn.functional.softmax(attn_weights, dim =-1, dtype=torch.float32).to(query_states.dtype)
+			# Apply the softmax, row-wise. attn_weights: [Batch_size, Num_Heads, Num_patches, Num_patches]
+		
+		attn_weights = nn.functional.dropout(attn_weights, p=self.dropout, training=self.training)
+			# Apply dropout only during training. For paligemma, we keep dropout = 0
+
+		attn_output = torch.matmul(attn_weights, value_states)
+			# Multiply the attention weights by the value states 
+			# does {Q * K^T / sqrt(d_k)} * V
+
+		if attn_output.size() != (batch_size, self.num_heads, seq_len, seq_len):
+			raise ValueError(
+				f"Attention output should be of size {(batch_size, self.num_heads, seq_len, seq_len)}, but is of size {attn_output.size()}"
+			)
+
+		attn_output = attn_output.transpose(1,2).contiguous()
+			# [Batch_size, Num_heads, Num_patches, Head_Dim] -> [Batch_size, Num_patches, Num_heads, Head_Dim] 
+			# done to represent the data in a per patch (per token) manner instead of per head manner. 
+			# contiguous() makes all the data contiguous in the memory. This makes future reshape functions faster to run as only indexing has to change instead of actually moving the data around
+
+		attn_output = attn_output.reshape(batch_size, seq_len, self.embed_dim)
+			# [Batch_size, Num_patches, Num_heads, Head_Dim] -> [Batch_size, Num_patches, Embed_dim]
+			# concatinates the outputs from all the individual attention heads into a single embedding, since there are Num_heads heads each with Head_dim number of output. Num_heads * Head_dim = Embed_dim
+
+		attn_output = self.out_proj(attn_output)
+			# [Batch_size, Num_patches, Embed_dim]
+			# basically does attn_output * W^o. 
+			# W^o is a Embed_dim by Embed_dim matrix. (out_proj is a linear layer with Embed_dim inputs and Embed_dim neurons, i.e, Embed_dim outputs)
+			# This mixes the outputs of all the individual attention heads into a single represention of full size for each of the tokens (patches).
+		
+		return attn_output, attn_weights
+		
+		
 
 class SiglipMLP(nn.Module):
 	def __init__(self, config: SiglipVisionConfig):
@@ -122,7 +181,7 @@ class SiglipMLP(nn.Module):
 		return hidden_states
 
 
-class SiglipEncoder(nn.Module):
+class SiglipEncoderLayer(nn.Module):
 	def __init__(self, config: SiglipVisionConfig):
 		super().__init__()
 		self.config = config
@@ -133,7 +192,7 @@ class SiglipEncoder(nn.Module):
 		self.layer_norm2 = nn.LayerNorm(self.embed_dim, eps=config.layer_norm_eps)
 
 	def forward(self, hidden_states: torch.Tensor) -> torch.Tensor:
-		"forward pass through the encoder"
+		"forward pass through the encoder layer"
 
 		residual = hidden_states
 			# residual: [Batch_size, Num_patches, Embed_dim]
@@ -170,7 +229,7 @@ class SiglipVisionTransformer(nn.Module):
 
 	def forward(self, pixel_values: torch.Tensor) -> torch.Tensor:
 		#putting it through the transformer
-		#pixel_values: [batfch_size, Channels, height, Width] -> [Batch_size, Num_patches, Embed_dim]
+		#pixel_values: [batch_size, Channels, height, Width] -> [Batch_size, Num_patches, Embed_dim]
 
 		hidden_state = self.embeddings(pixel_values)
 
