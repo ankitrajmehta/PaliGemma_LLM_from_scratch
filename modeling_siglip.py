@@ -119,7 +119,7 @@ class SiglipAttention(nn.Module):
 			# same as query_states operations done above
 			# [Batch_size, Num_heads, Num_patches, Head_Dim]
 
-		attn_weights = (torch.matmul(query_states, key_states.transponse(2,3))* self.scale)
+		attn_weights = (torch.matmul(query_states, key_states.transpose(2,3))* self.scale)
 			# calculate the attention using the formula Q * K^T / sqrt(d_k). 
 			# (Q:[Batch_size, Num_heads, Num_patches, Head_Dim] * K^T:[Batch_size, Num_heads, Head_Dim, Num_patches]) / sqrt(d_k) ->
 			# attn_weights: [Batch_size, Num_Heads, Num_patches, Num_patches]
@@ -220,7 +220,7 @@ class SiglipEncoderLayer(nn.Module):
 class SiglipEncoder(nn.Module):
 	def __init__(self, config: SiglipVisionConfig):
 		super().__init__()
-		self.config = self.config
+		self.config = config
 		self.layers = nn.ModuleList(
 			[SiglipEncoderLayer(config) for _ in range(config.num_hidden_layers)]
 		)
@@ -231,6 +231,8 @@ class SiglipEncoder(nn.Module):
 		for encoder_layer in self.layers:
 			hidden_states = encoder_layer(hidden_states)
 				# [Batch_size, Num_patches, Embed_dim]
+		
+		return hidden_states
 
 class SiglipVisionTransformer(nn.Module):
 	def __init__(self, config: SiglipVisionConfig):
