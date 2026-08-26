@@ -8,15 +8,15 @@ IMAGENET_STANDARD_STD = [.5,.5,.5] #mean and std of an image's pixel values base
 
 def add_image_tokens_to_prompt(prefix_prompt, bos_token, image_seq_len, image_token):
     """
-        Quoting from the blog (https://huggingface.co/blog/paligemma#detailed-inference-process):
-        The input text is tokenized normally.
-        A <bos> token is added at the beginning, and an additional newline token (\n) is appended.
-        This newline token is an essential part of the input prompt the model was trained with, so adding it explicitly ensures it's always there.
-        The tokenized text is also prefixed with a fixed number of <image> tokens. How many? 
-        It depends on the input image resolution and the patch size used by the SigLIP model. 
-        PaliGemma models are pre-trained on one of three square sizes (224x224, 448x448, or 896x896), 
-        and always use a patch size of 14. Therefore, the number of <image> tokens to prepend is 256 for the 224 models (224/14 * 224/14),
-        1024 for the 448 models, and 4096 for the 896 models.
+        From the blog (https://huggingface.co/blog/paligemma#detailed-inference-process):
+            The input text is tokenized normally.
+            A <bos> token is added at the beginning, and an additional newline token (\n) is appended.
+            This newline token is an essential part of the input prompt the model was trained with, so adding it explicitly ensures it's always there.
+            The tokenized text is also prefixed with a fixed number of <image> tokens. How many? 
+            It depends on the input image resolution and the patch size used by the SigLIP model. 
+            PaliGemma models are pre-trained on one of three square sizes (224x224, 448x448, or 896x896), 
+            and always use a patch size of 14. Therefore, the number of <image> tokens to prepend is 256 for the 224 models (224/14 * 224/14),
+            1024 for the 448 models, and 4096 for the 896 models.
         NOTE: \n acts as the seperator token ([SEP]), which divides input prompt from output tokens during autoregressive generation.
             from the paligemma paper it looks like the `\n` should be tokenized separately, but in the HF implementation this is not done.
             ref to HF implementation: https://github.com/huggingface/transformers/blob/7f79a97399bb52aad8460e1da2f36577d5dccfed/src/transformers/models/paligemma/processing_paligemma.py#L55-L73
@@ -90,7 +90,7 @@ def process_image(
         
 class PaliGemmaProcessor:
 
-    IMAGE_TOKEN ="<image>"
+    IMAGE_TOKEN ="<image>" # Acts as the placeholder for image-patch token during the text embedding. Will be replaced by the actual image patch embeddings later in the pipeline
 
     def __init__(self, tokenizer, num_image_tokens: int, image_size: int = 224):
         super().__init__()
