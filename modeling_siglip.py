@@ -267,3 +267,13 @@ class SiglipVisionModel(nn.Module):
 	def forward(self, pixel_values) -> Tuple:
 		# [Batch_Size, Channels, Height, Width] -> [Batch_Size, Num_patches, Embed_dim]
 		return self.vision_model(pixel_values=pixel_values)
+
+if __name__ == "__main__":
+	config = SiglipVisionConfig()
+	model = SiglipVisionModel(config=config)
+	trainable_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
+	print("Vision encoder size: ",  trainable_params)
+
+	for name, param in model.named_parameters():
+		if param.requires_grad:
+			print(f"{name}: {param.numel():,}")
