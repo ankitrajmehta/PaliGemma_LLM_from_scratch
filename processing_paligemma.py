@@ -95,7 +95,7 @@ class PaliGemmaProcessor:
     def __init__(self, tokenizer, num_image_tokens: int, image_size: int = 224):
         super().__init__()
 
-        self.image_seq_length = num_image_tokens
+        self.image_seq_length = num_image_tokens # Num_patches
         self.image_size = image_size
 
         # Toeknizer described here: https://github.com/google-research/big_vision/blob/main/big_vision/configs/proj/paligemma/README.md#tokenizer
