@@ -138,6 +138,7 @@ class SiglipAttention(nn.Module):
 		attn_output = torch.matmul(attn_weights, value_states)
 			# Multiply the attention weights by the value states 
 			# does {Q * K^T / sqrt(d_k)} * V
+			# attn_output shape: [Batch_size, Num_Heads, Num_patches, Head_Dim]
 
 		if attn_output.size() != (batch_size, self.num_heads, seq_len, seq_len):
 			raise ValueError(
