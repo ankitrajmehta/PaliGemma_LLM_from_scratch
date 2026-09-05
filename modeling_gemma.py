@@ -1,3 +1,7 @@
+"""
+    Implementation of the Gemma Text LLM and then connection with text to make the PaliGemma model.
+"""
+
 import torch
 from torch import nn
 from typing import Optional, Tuple, List
@@ -99,7 +103,8 @@ class PaliGemmaForConditionalGeneration(nn.Module):
 
     def tie_weights(self):
         """
-            Shares the weights of the embedding layer with the final linear layer (the one that converts the contextualized embeddings produced after the
+            Weight tying means using the same set of parameters (weights) for two different parts of the model
+            This function shares the weights of the embedding layer with the final linear layer (the one that converts the contextualized embeddings produced after the
             transformer layers back to token_id probabilities).
             It's possible to share their weights as they are essentially inverse actions of each other
             Weight tieing is not done by all LLMs, but it is present in Gemma
