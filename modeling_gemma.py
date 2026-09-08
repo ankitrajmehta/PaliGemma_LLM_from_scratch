@@ -113,11 +113,24 @@ class PaliGemmaForConditionalGeneration(nn.Module):
         return self.language_model.tie_weights()
 
     def merge_input_ids_with_image_features(
-            self, image_features: torch.Tensor  , input_embeds: torch.Tensor, input_ids: torch.Tensor, attention_mask: torch.Tensor, kv_cache: Optional[KVCache] = None
-            ):
+            self, 
+            image_features: torch.Tensor, 
+            inputs_embeds: torch.Tensor, 
+            input_ids: torch.Tensor, 
+            attention_mask: torch.Tensor, 
+            kv_cache: Optional[KVCache] = None
+        ):
+
+        """
+        Merge the embeddings of the text and the image tokens 
+        (replaces the placeholder `<image>` tokens' embeddings in input_embeds with the actual embedding representing the image patches)
+        Also, creates the causal mask and position_ids (to be used for RoPE later)
+        """
+
+
         _,_,embed_dim = image_features.shape #image_feature and input_embeds have same sized vector embeddings
         batch_size, sequence_length = input_ids.shape # input_ids has image tokens (placeholder), text, bos token, etc
-        dtype, device = input_embeds.dtype, input_embeds.device
+        dtype, device = inputs_embeds.dtype, inputs_embeds.device
 
         scaled_image_features = image_features / (self.config.hidden_size ** .5) # div by d^1/2 to maintain scale even if the input image was different dimensions
             # [Batch_size, Num_patches, Hidden_Size]
@@ -148,14 +161,77 @@ class PaliGemmaForConditionalGeneration(nn.Module):
             #  [Batch_size, Seq_Len, embed_dim]
 
         # Add the text embeddings
-        final_embedding = torch.where(text_mask_expanded, input_embeds, final_embedding)
-            # where ever the task_mask_expanded is 1, put value from corresponding position of inputs_embeds, else put value from final_embedding
+        final_embedding = torch.where(text_mask_expanded, inputs_embeds, final_embedding)
+            # where ever the text_mask_expanded is 1, put value from corresponding position of inputs_embeds, else put value from final_embedding
 
         # Add image embeddings. Can't use torch.where as scaled_image_features.shape != final_embedding.shape because Num_patches != Seq_len
         final_embedding = final_embedding.masked_scatter(image_mask_expanded, scaled_image_features)
 
         # Zero out padding tokens. pad_mask_expanded is all 0s anyway (i.e all false) as we dont implemnt padding, so all values of final_embedding are gonna be the same
         final_embedding = torch.where(pad_mask_expanded, torch.zeros_like(final_embedding), final_embedding)
+
+        # Creating the causal attention mask:
+
+        dtype, device = inputs_embeds.dtype, inputs_embeds.device
+        min_dtype = torch.finfo(dtype).min
+        q_len = inputs_embeds.shape[1]
+
+        if kv_cache is None or kv_cache.num_items()==0:
+            #i.e prefill stage
+            """
+                In causal attention, each token can only attend to itself and the tokens that came before it in the sequence. 
+                Normally, for images we want to allow each image token to attend to all other image tokens, while text tokens can only attend to themselves and the tokens that came before them (even of prompt (i.e prefill stage)).
+                But in Paligemma, during prefill stage, Paligemma allows all tokens to attend to all other tokens, including text tokens.
+                For most other LLMs, the attention mask is a lower triangular matrix, but in Paligemma, the attention mask is a full matrix(i.e all tokens can attend to all other tokens)
+                (This is for inference) 
+            """
+            # This func only works when we have no padding
+            causal_mask = torch.full(
+                (batch_size, q_len, q_len), fill_value=0, dtype=dtype, device=device
+            )
+            # for most other models, we would keep -inf to upper triangle, making a lower triangular martix of 0s. This would be causal mask. As when -inf is added to the Q*k^T, it masks out the upper triangle. None of this is done in paligemma, it just uses causal_mask of all 0s only.
+            # note: most LLMs use causal mask with 1 = unmasked (used), 0 = masked (unused/ un-attended). This mask is multipled over all elements. 
+            # But, in Paligemma, we add the mask (see further up in code), and so we use 0 = unmasked (used) and -inf = masked (unused/un-attended)
+        else:
+          
+            assert q_len ==1   # for generating tokens, only latest token is used as query. rest of data we get from the kv cache
+            kv_len = kv_cache.num_items() + q_len #kv size is being increased by one more
+
+            """while generating tokens, we dont mask anything as the latest token should attend to all previous tokens"""
+
+            # This func only works when we have no padding
+            causal_mask = torch.full(
+                (batch_size, q_len, kv_len), fill_value=0, dtype=dtype, device=device
+            )
+
+        # Add the dimension for head:
+        causal_mask = causal_mask.unsqueeze(1)
+            # [Batch_sieze, q_len, kv_len] -> [Batch_size, 1, q_len, kv_len]
+            # This is 1 dim is for Num_heads_Q dimension (by broadcasting later)
+
+
+        # Getting the position_ids now, which will be use in RoPE (Rotary Position Embedding):
+
+        if kv_cache is not None and kv_cache.num_items() > 0: # the generation phase
+            # The position of the query is just the last position
+            position_ids = attention_mask.cumsum(-1)[:, -1] 
+                # the attention_mask comes from the tokenizer is just all ones as this implementation doesn't use padding.
+                # attention_mask.cumsum(-1) gives cumulative sum going from 1 to len(attention_mask[1]).
+                # we do [:, -1] as we want the position_id of the final token only from each of the batch. For generation, we are going to encode only this
+            
+            if position_ids.dim() == 1:
+                position_ids = position_ids.unsqueeze(0) # to ensure it has a batch_dim at start always, even if only 1 batch exists
+
+        else: # the prefill stage
+            position_ids = (attention_mask.cumsum(-1)).masked_fill_((attention_mask == 0), 1).to(device)    
+                # Create a position_ids based on the size of the attention_mask
+                # For masked tokens, use the number 1 as position. (gives position id of 1 to all the padding positions (where attention_mask ==0))
+            
+        return final_embedding, causal_mask, position_ids
+
+        
+
+
 
         
 
