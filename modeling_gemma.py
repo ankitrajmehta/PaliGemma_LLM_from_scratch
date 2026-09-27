@@ -74,7 +74,18 @@ class PaliGemmaConfig:
         self.vision_config.projection_dim = projection_dim
 
 class PaliGemmaMultiModalProjection(nn.Module):
-    pass
+    def __init__(self, config: PaliGemmaConfig):
+        super().__init__()
+        self.linear = nn.Linear(config.vision_config.hidden_size, config.vision_config.projection_dim, bias=True)
+
+    def forward(self, image_features):
+        hidden_states = self.linear(image_features)
+            # [Batch_size, Num_patches, Embed_dim] -> [Batch_size, Num_patches, projection_dim]
+            # note: Embed_dim = embedding dimension of the image, projection_dim = embedding dimension of the text
+
+        return hidden_states
+
+
 
 class GemmaForCausalLm(nn.Module):
     pass
@@ -128,7 +139,7 @@ class PaliGemmaForConditionalGeneration(nn.Module):
         """
 
 
-        _,_,embed_dim = image_features.shape #image_feature and input_embeds have same sized vector embeddings
+        _,_,embed_dim = image_features.shape #image_feature and input_embeds have same sized vector embeddings (thanks to the projection)
         batch_size, sequence_length = input_ids.shape # input_ids has image tokens (placeholder), text, bos token, etc
         dtype, device = inputs_embeds.dtype, inputs_embeds.device
 
