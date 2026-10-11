@@ -117,7 +117,19 @@ class GemmaModel(nn.Module):
         # [Batch_Size, Seq_Len, Hidden_Size]
         return hidden_states
         
+class GemmaRMSNorm(nn.Module):
+    def __init__(self, dim: int, eps: float = 1e-6):
+        super().__init__()
+        self.eps = eps
+        self.weight = nn.Parameter(torch.zeros(dim)) # learnable parameter per feature (like a gamma parameter)
 
+    def _norm(self,x) -> torch.Tensor:
+        return x * torch.rsqrt(x.pow(2).mean(-1, keepdim = True) + self.eps)
+
+    def forward(self, x: Optional[torch.Tensor] = None):
+        output = self._norm(x.float())
+        output = output * (1.0 + self.weight.float())
+        return output.type_as(x)
 
 
 class PaliGemmaMultiModalProjector(nn.Module):
