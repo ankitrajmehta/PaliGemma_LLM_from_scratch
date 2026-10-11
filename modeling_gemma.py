@@ -285,11 +285,6 @@ class PaliGemmaForConditionalGeneration(nn.Module):
             
         return final_embedding, causal_mask, position_ids
 
-        
-
-
-
-        
 
     def forward(
         self,
