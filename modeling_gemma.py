@@ -102,7 +102,6 @@ class GemmaModel(nn.Module):
         # [Batch_Size, Seq_Len, Hidden_Size]
         normalizer = torch.tensor(self.config.hidden_size**0.5, dtype=hidden_states.dtype)
         hidden_states = hidden_states * normalizer
-        abc = "a"
         for decoder_layer in self.layers:
             # [Batch_Size, Seq_Len, Hidden_Size]
             hidden_states = decoder_layer(
