@@ -24,7 +24,7 @@ class GemmaConfig():
         head_dim=256, # dimension of vector each attention head works with
         max_position_embeddings=8192, # ctx window size
         rms_norm_eps=1e-6,
-        rope_theta=10000.0, 
+        rope_theta=10000.0, # Based freq of RoPE
         attention_bias=False, # if we want to have bias in attention matrixes 
         attention_dropout=0.0, # not used in paligemma
         pad_token_id=None, # No padding used
@@ -108,6 +108,53 @@ class GemmaMLP(nn.Module):
         # z = self.down_proj(z) # [Batch_Size, Seq_Len, Intermediate_Size] -> [Batch_Size, Seq_Len, Hidden_Size]
         return self.down_proj(nn.functional.gelu(self.gate_proj(x), approximate="tanh") * self.up_proj(x))
 
+
+class GemmaAttention(nn.Module):
+
+    def __init__(self, config: GemmaConfig, layer_idx: Optional[int] = None):
+        super().__init__()
+        self.config = config
+        self.layer_idx = layer_idx
+
+        self.attention_dropout = config.attention_dropout # will not be used
+        self.hidden_size = config.hidden_size
+        self.num_heads = config.num_attention_heads
+        self.head_dim = config.head_dim
+        self.num_key_value_heads = config.num_key_value_heads
+        self.num_key_value_groups = self.num_heads // self.num_key_value_heads
+        self.max_position_embeddings = config.max_position_embeddings
+        self.rope_theta = config.rope_theta
+        self.is_causal = True
+
+        assert self.hidden_size % self.num_heads == 0      
+
+        # applying grouped query attention 
+        """
+        Grouped query attention uses fewer key and value embedding divisions (the embedding size for them is smaller and hence divided into fewer pieces, but the size of each inidivual piece is still head_dim (same as query's division).) 
+        Each of the multiple attention heads uses a different part from the division of the query embedding (q_proj) (Each Head_dim sized array goes to one attention head)
+        but groups of attention heads share the same division from the key and value embeddings (k_proj & v_proj) (Each Head_dim sized array goes to one group of attention heads)
+        This makes the calculations much faster as in the GPU, fewer values need to be copied/exchanged between HBM and local memory and cuda cores.
+        """     
+
+        self.q_proj = nn.Linear(self.hidden_size, self.num_heads * self.head_dim, bias=config.attention_bias)
+        # [Batch_Size, Seq_Len, Hidden_Size]] -> [Batch_Size, Seq_Len, num_heads * head_dim]
+        # where, num_heads * head_dim = Hidden_Size. so it is [Batch_Size, Seq_Len, Hidden_Size]] -> [Batch_Size, Seq_Len, Hidden_Size]] 
+        # It bascially divides the representation space amongst all the heads equally without reducing the total representation space
+
+        self.k_proj = nn.Linear(self.hidden_size, self.num_key_value_heads * self.head_dim, bias=config.attention_bias)
+        self.v_proj = nn.Linear(self.hidden_size, self.num_key_value_heads * self.head_dim, bias=config.attention_bias)
+        # [Batch_Size, Seq_Len, Hidden_Size]] -> [Batch_Size, Seq_Len, num_key_value_heads * head_dim]
+        # if head_dim = 128 and hidden_size = 1024, 
+        #   then [Batch_Size, Seq_Len, 1024]] -> [Batch_Size, Seq_Len, num_key_value_heads * 128]
+        # This basically reduces representation size of each token for the key and value
+
+        self.o_proj = nn.Linear(self.num_heads * self.head_dim, self.hidden_size, bias=config.attention_bias)
+        
+        self.rotary_emb = GemmaRotaryEmbedding(
+            self.head_dim,
+            max_position_embeddings=self.max_position_embeddings,
+            base=self.rope_theta,
+        )
 
 class GemmaDecoderLayer(nn.Module):
 
