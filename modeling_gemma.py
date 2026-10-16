@@ -128,7 +128,7 @@ class GemmaAttention(nn.Module):
 
         assert self.hidden_size % self.num_heads == 0      
 
-        # applying grouped query attention 
+        # making attention layers as per grouped query attention required sizes
         """
         Grouped query attention uses fewer key and value embedding divisions (the embedding size for them is smaller and hence divided into fewer pieces, but the size of each inidivual piece is still head_dim (same as query's division).) 
         Each of the multiple attention heads uses a different part from the division of the query embedding (q_proj) (Each Head_dim sized array goes to one attention head)
@@ -155,6 +155,42 @@ class GemmaAttention(nn.Module):
             max_position_embeddings=self.max_position_embeddings,
             base=self.rope_theta,
         )
+
+    def forward(
+        self,
+        hidden_states: torch.Tensor,
+        attention_mask: Optional[torch.Tensor] = None,
+        position_ids: Optional[torch.LongTensor] = None,
+        kv_cache: Optional[KVCache] = None,
+        **kwargs,
+    ) -> Tuple[torch.Tensor, Optional[torch.Tensor], Optional[Tuple[torch.Tensor]]]:
+        
+        bsz, q_len, _ = hidden_states.size() # [Batch_Size, Seq_Len, Hidden_Size]
+
+        # [Batch_Size, Seq_Len, Num_Heads_Q * Head_Dim]
+        query_states = self.q_proj(hidden_states)
+        # [Batch_Size, Seq_Len, Num_Heads_KV * Head_Dim]
+        key_states = self.k_proj(hidden_states)
+        # [Batch_Size, Seq_Len, Num_Heads_KV * Head_Dim]
+        value_states = self.v_proj(hidden_states)
+
+
+        # [Batch_Size, Seq_Len, Num_Heads_Q * Head_Dim] -> [Batch_Size, Seq_Len, Num_Heads_Q, Head_Dim] -> [Batch_Size, Num_Heads_Q, Seq_Len, Head_Dim]
+        query_states = query_states.view(bsz, q_len, self.num_heads, self.head_dim).transpose(1, 2)
+        # [Batch_Size, Num_Heads_KV, Seq_Len, Head_Dim]
+        key_states = key_states.view(bsz, q_len, self.num_key_value_heads, self.head_dim).transpose(1, 2)
+        # [Batch_Size, Num_Heads_KV, Seq_Len, Head_Dim]
+        value_states = value_states.view(bsz, q_len, self.num_key_value_heads, self.head_dim).transpose(1, 2)
+
+        # [Batch_Size, Seq_Len, Head_Dim], [Batch_Size, Seq_Len, Head_Dim]
+        cos, sin = self.rotary_emb(value_states, position_ids, seq_len=None)
+        # [Batch_Size, Num_Heads_Q, Seq_Len, Head_Dim], [Batch_Size, Num_Heads_KV, Seq_Len, Head_Dim]
+        query_states, key_states = apply_rotary_pos_emb(query_states, key_states, cos, sin)
+
+        if kv_cache is not None:
+            key_states, value_states = kv_cache.update(key_states, value_states, self.layer_idx)
+
+        pass # left to finish. Doing kv cache now
 
 class GemmaDecoderLayer(nn.Module):
 
@@ -306,8 +342,6 @@ class GemmaForCausalLm(nn.Module):
 
         return return_data
 
-class KVCache:
-    pass
 
 class PaliGemmaForConditionalGeneration(nn.Module):
     """
