@@ -140,6 +140,14 @@ class GemmaMLP(nn.Module):
         return self.down_proj(nn.functional.gelu(self.gate_proj(x), approximate="tanh") * self.up_proj(x))
 
 
+def repeat_kv(hidden_states: torch.Tensor, n_rep: int) -> torch.Tensor:
+    batch, num_key_value_heads, slen, head_dim = hidden_states.shape
+    if n_rep == 1:
+        return hidden_states
+    hidden_states = hidden_states[:, :, None, :, :].expand(batch, num_key_value_heads, n_rep, slen, head_dim)
+    return hidden_states.reshape(batch, num_key_value_heads * n_rep, slen, head_dim)
+
+
 class GemmaAttention(nn.Module):
 
     def __init__(self, config: GemmaConfig, layer_idx: Optional[int] = None):
@@ -205,6 +213,10 @@ class GemmaAttention(nn.Module):
         # [Batch_Size, Seq_Len, Num_Heads_KV * Head_Dim]
         value_states = self.v_proj(hidden_states)
 
+        #note: during the  prefil stage, query_states, key_states, and value_states are all full vectors containing all the sequence len number of elements' embeddings
+        # but during generation phase, they contain only vectors containing embedding of the last token. 
+        # for query_states this is enough, for key and value states, the past embeddings are retained from the kv cache
+
 
         # [Batch_Size, Seq_Len, Num_Heads_Q * Head_Dim] -> [Batch_Size, Seq_Len, Num_Heads_Q, Head_Dim] -> [Batch_Size, Num_Heads_Q, Seq_Len, Head_Dim]
         query_states = query_states.view(bsz, q_len, self.num_heads, self.head_dim).transpose(1, 2)
@@ -221,7 +233,44 @@ class GemmaAttention(nn.Module):
         if kv_cache is not None:
             key_states, value_states = kv_cache.update(key_states, value_states, self.layer_idx)
 
-        pass # left to finish. Doing kv cache now
+        
+        # Repeat the key and values to match the number of heads of the query
+        # done so num_key_value_heads no. of key (and value) divisions can be mapped to Num_Heads_Q number of query divisions (which is also the number of attention heads)
+        # if we used flash attention, we would actually use the lower number of key and values in claculations too to make computation faster
+        # but since we dont have a custom cuda kernel for that, we are reversing the grouped query attention (as if it was never done) by repeating the keys and values
+        # hence the only benifit we got from grouped query attention is a smaller KV cache, no computational benifits
+        key_states = repeat_kv(key_states, self.num_key_value_groups)
+        value_states = repeat_kv(value_states, self.num_key_value_groups)
+        # Perform the calculation as usual, Q * K^T / sqrt(head_dim). Shape: [Batch_Size, Num_Heads_Q, Seq_Len_Q, Seq_Len_KV]
+        attn_weights = torch.matmul(query_states, key_states.transpose(2, 3)) / math.sqrt(self.head_dim)
+
+        assert attention_mask is not None
+        attn_weights = attn_weights + attention_mask
+
+        # Apply the softmax
+        # [Batch_Size, Num_Heads_Q, Seq_Len_Q, Seq_Len_KV]
+        attn_weights = nn.functional.softmax(attn_weights, dim=-1, dtype=torch.float32).to(query_states.dtype)
+        # Apply the dropout (none in paligemma)
+        attn_weights = nn.functional.dropout(attn_weights, p=self.attention_dropout, training=self.training)
+        # Multiply by the values. [Batch_Size, Num_Heads_Q, Seq_Len_Q, Seq_Len_KV] x [Batch_Size, Num_Heads_KV, Seq_Len_KV, Head_Dim] -> [Batch_Size, Num_Heads_Q, Seq_Len_Q, Head_Dim]
+        attn_output = torch.matmul(attn_weights, value_states)
+
+        if attn_output.size() != (bsz, self.num_heads, q_len, self.head_dim):
+            raise ValueError(
+                f"`attn_output` should be of size {(bsz, self.num_heads, q_len, self.head_dim)}, but is"
+                f" {attn_output.size()}"
+            )
+        
+        # Make sure the sequence length is the second dimension. # [Batch_Size, Num_Heads_Q, Seq_Len_Q, Head_Dim] -> [Batch_Size, Seq_Len_Q, Num_Heads_Q, Head_Dim]
+        attn_output = attn_output.transpose(1, 2).contiguous() # contiguous -> see in modeling_siglip.py 
+
+        # Concatenate all the heads together. [Batch_Size, Seq_Len_Q, Num_Heads_Q, Head_Dim] -> [Batch_Size, Seq_Len_Q, Num_Heads_Q * Head_Dim]
+        attn_output = attn_output.view(bsz, q_len, -1)
+
+        # Multiply by W_o. [Batch_Size, Seq_Len_Q, Hidden_Size]
+        attn_output = self.o_proj(attn_output)
+
+        return attn_output, attn_weights
 
 class GemmaDecoderLayer(nn.Module):
 
