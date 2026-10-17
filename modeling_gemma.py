@@ -102,7 +102,8 @@ class GemmaRotaryEmbedding(nn.Module):
         self.register_buffer("inv_freq", tensor=inv_freq, persistent=False)
 
     @torch.no_grad()
-    def forward(self, x, position_ids, seq_len=None):
+    def forward(self, x, position_ids, seq_len=None): 
+        #TODO: check if seq_len is needed  
         # x: [bs, num_attention_heads, seq_len, head_size]
 
         self.inv_freq.to(x.device)
@@ -129,7 +130,8 @@ class GemmaRotaryEmbedding(nn.Module):
             # as desribed in the paper, position * theta_i is repeated twice accross the embedding for all the i. 
             # But in paper it is desribed in a different way, going in sequence: position * theta_1, position * theta_1, position * theta_2, position * theta_2, and so on
             # here we are doing in sequence: position * theta_1, position * theta_2, position * theta_3, ......, position * theta_1, position * theta_2, position * theta_3, .....
-            # Our implementation is how huggingface does it
+            # Our implementation is how huggingface does it.
+            # The rotate_half() function compensates for the difference in implmenetation and the final output is the same as would have been from the paper's method 
 
 
             # cos, sin: [Batch_Size, Seq_Len, Head_Dim]
@@ -137,8 +139,23 @@ class GemmaRotaryEmbedding(nn.Module):
             sin = emb.sin()
         return cos.to(dtype=x.dtype), sin.to(dtype=x.dtype)
 
+
+def rotate_half(x):
+    # x: [bs, num_attention_heads, seq_len, head_size]
+
+    # Build the tensor for the sin part of the positional encoding. (different from the paper, done like how HF does it)
+    x1 = x[..., : x.shape[-1] // 2] # Takes the first half of the last dimension
+    x2 = x[..., x.shape[-1] // 2 :] # Takes the second half of the last dimension
+    return torch.cat((-x2, x1), dim=-1)
+
+
 def apply_rotary_pos_emb(q, k, cos, sin, unsqueeze_dim=1):
-    pass
+    cos = cos.unsqueeze(unsqueeze_dim) # Add the head dimension
+    sin = sin.unsqueeze(unsqueeze_dim) # Add the head dimension
+    # Apply the formula (34) of the Rotary Positional Encoding paper.
+    q_embed = (q * cos) + (rotate_half(q) * sin)
+    k_embed = (k * cos) + (rotate_half(k) * sin)
+    return q_embed, k_embed
 
 class KVCache:
     def __init__(self) -> None:
