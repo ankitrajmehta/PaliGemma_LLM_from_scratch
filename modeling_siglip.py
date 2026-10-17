@@ -55,10 +55,10 @@ class SiglipVisionEmbeddings(nn.Module):
 		self.num_patches = (self.image_size//self.patch_size)**2 #here: (224/16)**2 = 14**2 = 196 patches
 		self.num_positions = self.num_patches
 		self.positional_embeddings = nn.Embedding(self.num_positions, self.embed_dim) #learned positonal embeddings
-		self.register_buffer(
+		self.register_buffer( # A buffer is a tensor that belongs to the module but is not a trainable parameter.
 			"position_ids",
 			torch.arange(self.num_positions).expand((1,-1)), #.expand((1,-1)) resizes its shape from [self.num_positions] to [1,self.num_positions]
-			persistent=False # no  need to store this in state_dict as it easily calculateable 
+			persistent=False # no  need to store this in state_dict, i.e, storing it in every checkpoint is unnecessary as the model can easily regenerate it when initialized. 
 		)
 
 	def forward(self, pixel_values: torch.FloatTensor)->torch.Tensor:
