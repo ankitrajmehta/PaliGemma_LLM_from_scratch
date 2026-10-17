@@ -42,7 +42,7 @@ def normalize(
 
 def resize(
     image: Image,
-    size: Dict[int, int]= None,
+    size: Tuple[int, int]= None,
     resample: Image.Resampling = Image.Resampling.BICUBIC,
     reducing_gap: Optional[int] = None,
 ) -> np.ndarray:
@@ -64,7 +64,7 @@ def rescale(
 
 def process_image(
     images: List[Image.Image],
-    size: Dict[str, int]= None, # TODO : BOTH SHOULD BE int 
+    size: Dict[str, int]= None, # TODO : BOTH SHOULD BE int ?
     resample: Image.Resampling = None,
     rescale_factor: float = None,
     image_mean: Optional[Union[float, List[float]]] = None, # used to ensure images' pixel values are normalized in each of the 3 channels. 
