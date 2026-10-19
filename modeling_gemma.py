@@ -478,6 +478,8 @@ class GemmaForCausalLm(nn.Module):
 
         hidden_states = outputs
         logits = self.lm_head(hidden_states)
+        # logits: [Batch_Size, Seq_Len, vocab_size]
+
         logits = logits.float()
 
         return_data = {
