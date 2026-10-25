@@ -2,3 +2,5 @@ try.py
 .env
 venv
 __pycache__
+model_repo_from_hg/
+image.png

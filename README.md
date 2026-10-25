@@ -13,3 +13,20 @@ More about PaliGemma: https://huggingface.co/blog/paligemma and https://github.c
 
 
 ---
+# To Run it:
+(Commands below are for Linux. Use appropirate commands for your OS)
+1.  First download the model weights from huggingface
+    ```
+    hf auth login
+    ```
+    ```
+    hf download google/paligemma-3b-pt-224 \
+    --local-dir ~/palligemma/model_repo_from_hg/paligemma-3b-pt-224
+    ```
+
+2. Edit inference.sh with required prompt, image path and parameters
+
+3. Run using:
+    ```
+    ./inference.sh
+    ```

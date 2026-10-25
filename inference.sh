@@ -1,8 +1,8 @@
 #!/bin/bash
 
-MODEL_PATH="/paligemma-weights/paligemma-3b-pt-224"
+MODEL_PATH="model_repo_from_hg/paligemma-3b-pt-224"
 PROMPT="whats in the image "
-IMAGE_FILE_PATH="pic.jpeg"
+IMAGE_FILE_PATH="image.png"
 MAX_TOKENS_TO_GENERATE=100
 TEMPERATURE=0.9
 TOP_P=0.75
