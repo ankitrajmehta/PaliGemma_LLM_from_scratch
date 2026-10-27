@@ -54,7 +54,7 @@ class SiglipVisionEmbeddings(nn.Module):
 
 		self.num_patches = (self.image_size//self.patch_size)**2 #here: (224/16)**2 = 14**2 = 196 patches
 		self.num_positions = self.num_patches
-		self.positional_embeddings = nn.Embedding(self.num_positions, self.embed_dim) #learned positonal embeddings
+		self.position_embedding = nn.Embedding(self.num_positions, self.embed_dim) #learned positonal embeddings
 		self.register_buffer( # A buffer is a tensor that belongs to the module but is not a trainable parameter.
 			"position_ids",
 			torch.arange(self.num_positions).expand((1,-1)), #.expand((1,-1)) resizes its shape from [self.num_positions] to [1,self.num_positions]
@@ -76,7 +76,7 @@ class SiglipVisionEmbeddings(nn.Module):
 		embeddings = embeddings.transpose(1,2) # transpose dimension 1 and 2
 			#converts [Batch_Size, embed_dim, Num_patches] ->  [Batch_Size, Num_patches, embed_dim]
 
-		embeddings = embeddings + self.positional_embeddings(self.position_ids)
+		embeddings = embeddings + self.position_embedding(self.position_ids)
 			#[Batch_Size, Num_patches, embed_dim] + [Num_patches, embed_dim] = [Batch_Size, Num_patches, embed_dim] (broadcasts across all batch images)
 
 		return embeddings
@@ -188,7 +188,7 @@ class SiglipEncoderLayer(nn.Module):
 		self.config = config
 		self.embed_dim = config.hidden_size
 		self.self_attn = SiglipAttention(config)
-		self.layer_norm = nn.LayerNorm(self.embed_dim, eps=config.layer_norm_eps)
+		self.layer_norm1 = nn.LayerNorm(self.embed_dim, eps=config.layer_norm_eps)
 		self.mlp = SiglipMLP(config)
 		self.layer_norm2 = nn.LayerNorm(self.embed_dim, eps=config.layer_norm_eps)
 
@@ -198,7 +198,7 @@ class SiglipEncoderLayer(nn.Module):
 		residual = hidden_states
 			# residual: [Batch_size, Num_patches, Embed_dim]
 
-		hidden_states = self.layer_norm(hidden_states)
+		hidden_states = self.layer_norm1(hidden_states)
 			#[Batch_size, Num_patches, Embed_dim] -> [Batch_size, Num_patches, Embed_dim]
 
 		hidden_states, _ = self.self_attn(hidden_states)

@@ -30,7 +30,17 @@ def load_hf_model(model_path: str, device: str) -> Tuple[PaliGemmaForConditional
     model = PaliGemmaForConditionalGeneration(config).to(device)
 
     # Load the state dict of the model
-    model.load_state_dict(tensors, strict=False)
+    missing, unexpected = model.load_state_dict(tensors, strict=False)
+
+    # The same matrix serves as both the input embedding table and the output vocabulary projection in Gemma, so the checkpoint stores it only once as embed_tokens.weight
+    # lm_head is tied to the embed_tokens (through tie_weights() function),
+    missing = [k for k in missing if not k.startswith("language_model.lm_head")]
+    if missing or unexpected:
+        raise RuntimeError(
+            f"""Checkpoint does not match the model architecture.\n
+            Missing from checkpoint (would stay randomly initialized): {missing}\n
+            Unexpected in checkpoint (silently dropped): {unexpected}"""
+        )
 
     # Tie weights
     model.tie_weights()

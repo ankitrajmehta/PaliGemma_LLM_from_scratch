@@ -503,7 +503,7 @@ class PaliGemmaForConditionalGeneration(nn.Module):
         super().__init__()
         self.config = config
         self.vision_tower = SiglipVisionModel(config.vision_config)
-        self.multimodal_projector = PaliGemmaMultiModalProjector(config)
+        self.multi_modal_projector = PaliGemmaMultiModalProjector(config)
         self.vocab_size = config.vocab_size
 
         self.language_model = GemmaForCausalLm(config.text_config)
@@ -657,7 +657,7 @@ class PaliGemmaForConditionalGeneration(nn.Module):
         selected_image_feature = self.vision_tower(pixel_values.to(input_embeds.dtype))
             # [Batch_size, Channels, Height, Width]  -> [Batch_size, Num_patches, Embed_dim]
         
-        image_features = self.multimodal_projector(selected_image_feature)
+        image_features = self.multi_modal_projector(selected_image_feature)
             # [Batch_size, Num_patches, Embed_dim] -> [Batch_size, Num_patches, Hidden_size]
                 # Embed_dim is image embedding size, Hidden_size is text embedding size
 
@@ -669,7 +669,7 @@ class PaliGemmaForConditionalGeneration(nn.Module):
         outputs = self.language_model(
             attention_mask=attention_mask,
             position_ids=position_ids,
-            input_embeds=input_embeds,
+            inputs_embeds=input_embeds,
             kv_cache=kv_cache
         )
 
