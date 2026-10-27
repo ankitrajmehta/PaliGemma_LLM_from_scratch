@@ -456,7 +456,7 @@ class GemmaForCausalLm(nn.Module):
         return self.model.embed_tokens
 
     def tie_weight(self):
-        self.lm_head.weight = self.model.embed_token.weight
+        self.lm_head.weight = self.model.embed_tokens.weight
 
 
     def forward(
@@ -520,7 +520,7 @@ class PaliGemmaForConditionalGeneration(nn.Module):
             Weight tieing is not done by all LLMs, but it is present in Gemma
             Useful for reduction of parameters in the model
         """
-        return self.language_model.tie_weights()
+        return self.language_model.tie_weight()
 
     def merge_input_ids_with_image_features(
             self, 

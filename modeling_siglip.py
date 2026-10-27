@@ -140,9 +140,9 @@ class SiglipAttention(nn.Module):
 			# does {Q * K^T / sqrt(d_k)} * V
 			# attn_output shape: [Batch_size, Num_Heads, Num_patches, Head_Dim]
 
-		if attn_output.size() != (batch_size, self.num_heads, seq_len, seq_len):
+		if attn_output.size() != (batch_size, self.num_heads, seq_len, self.head_dim):
 			raise ValueError(
-				f"Attention output should be of size {(batch_size, self.num_heads, seq_len, seq_len)}, but is of size {attn_output.size()}"
+				f"Attention output should be of size {(batch_size, self.num_heads, seq_len, self.head_dim)}, but is of size {attn_output.size()}"
 			)
 
 		attn_output = attn_output.transpose(1,2).contiguous()

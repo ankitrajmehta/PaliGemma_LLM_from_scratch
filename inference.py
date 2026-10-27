@@ -15,7 +15,7 @@ def move_inputs_to_device(model_inputs: dict, device: str):
 def get_model_inputs(
     processor: PaliGemmaProcessor, prompt: str, image_file_path: str, device: str
 ):
-    image = Image.open(image_file_path)
+    image = Image.open(image_file_path).convert("RGB")
     images = [image]
     prompts = [prompt]
     model_inputs = processor(text=prompts, images=images)
@@ -135,7 +135,9 @@ def main(
 
     print(f"Loading model")
     model, tokenizer = load_hf_model(model_path, device)
+    print("load hf done")
     model = model.to(device).eval()
+    print("to device done")
 
     num_image_tokens = model.config.vision_config.num_image_tokens
     image_size = model.config.vision_config.image_size
